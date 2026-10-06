@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """회차 확인.
 
-    python scripts/check_session.py 4        →  results/check_s04.json
+    python scripts/check_session.py 5        →  results/check_s05.json
 
 회차 끝에 이걸 돌려서 나온 JSON 을 커밋합니다. 그 파일이 제출물입니다.
 강사는 그 파일들을 모아 표로 보고 빨간 칸만 확인합니다.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -198,7 +199,37 @@ def check_s04() -> dict:
     }
 
 
-CHECKS = {2: check_s02, 3: check_s03, 4: check_s04}
+def check_s05() -> dict:
+    from finrag.settings import get_settings
+    s = get_settings()
+    ag = _json(s.results_dir / "agentic.json") or {}
+    adv = _json(s.results_dir / "adversarial.json") or {}
+    try:
+        r = subprocess.run([sys.executable, "-m", "pytest", "tests/test_calc_golden.py", "-q"],
+                           cwd=ROOT, capture_output=True, timeout=300, text=True)
+        tests_ok, detail = r.returncode == 0, r.stdout.strip().splitlines()[-1] if r.stdout else ""
+    except Exception as e:
+        tests_ok, detail = False, str(e)
+    o = ag.get("overall", {})
+    abst = o.get("abstain_accuracy")
+    # 정책 1쪽은 5회차 과제다. 템플릿을 복사만 하고 빈칸(____)을 남겨 두면 안 낸 것이다.
+    pol = ROOT / "docs" / "agent_policy.md"
+    if not pol.exists():
+        pol_ok = ok(False, "docs/agent_policy.md 가 없다 (docs/templates/agent_policy.md 를 복사해 채운다)")
+    else:
+        blanks = pol.read_text(encoding="utf-8").count("____")
+        pol_ok = ok(blanks == 0, f"빈칸 {blanks}곳 남음" if blanks else f"{len(pol.read_text(encoding='utf-8')):,}자")
+    return {
+        "계산 골든 테스트": ok(tests_ok, detail),
+        "agentic.json 존재": ok(ag.get("n", 0) >= 40, f"{ag.get('n', 0)}문항" + (" (가짜 모델)" if ag.get("llm") == "fake" else "")),
+        "미답변형 거절 기록": ok(abst is not None,
+                          f"미답변 정확도 {abst}, 오거절률 {o.get('false_refusal_rate')}, 답변률 {o.get('answer_rate')}"),
+        "적대적 5문항 기록": ok(adv.get("n", 0) >= 5, f"통과 {adv.get('pass_rate')}" if adv else "results/adversarial.json 없음 (make adversarial)"),
+        "에이전트 정책 문서": pol_ok,
+    }
+
+
+CHECKS = {2: check_s02, 3: check_s03, 4: check_s04, 5: check_s05}
 
 
 def main() -> int:

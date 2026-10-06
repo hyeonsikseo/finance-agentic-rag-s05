@@ -16,3 +16,5 @@ numpy
 # 4회차부터. 한국어 형태소 분석기와 BM25
 kiwipiepy>=0.23
 rank-bm25>=0.2.2
+# 5회차부터. 에이전트 정책(policy.yaml)과 계산 명세(calc_specs.yaml)를 읽습니다
+pyyaml>=6

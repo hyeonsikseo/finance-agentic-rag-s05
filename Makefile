@@ -1,4 +1,4 @@
-.PHONY: help setup download models models-rerank embeddings notebook test ingest-sample ingest index baseline bm25-compare hybrid-norerank hybrid rerank-sweep chunk chunk-sample profile
+.PHONY: help setup download models models-rerank embeddings notebook test agentic-sample agentic adversarial graph ask ingest-sample ingest index baseline bm25-compare hybrid-norerank hybrid rerank-sweep chunk chunk-sample profile
 PY := .venv/bin/python
 export HF_HOME := ./models
 EMB_URL := https://github.com/hyeonsikseo/finance-agentic-rag-s03/releases/download/s03/BAAI_bge-m3.npz
@@ -10,15 +10,16 @@ help:
 	@echo "make models          임베딩 모델 BGE-M3 (3회차 폴더에서 models 를 복사했으면 건너뜁니다)"
 	@echo "make models-rerank   리랭커 bge-reranker-v2-m3 다운로드 (2.2GB, 10~20분. 수업 전에)"
 	@echo "make embeddings      강사가 만든 임베딩 스냅샷 다운로드 (13MB. 3회차 폴더에서 복사했으면 건너뜁니다)"
-	@echo "make notebook        Hybrid 검색 노트북 열기 (수업 1~2부)"
-	@echo "make test            자동 채점. 2·3회차 35개 + 4회차 검사 (채우기 전에는 실패가 정상)"
-	@echo "make bm25-compare    BM25 만으로 40문항: 공백 토크나이저 vs Kiwi (실측 1, 1~2분)"
-	@echo "make hybrid-norerank Dense + BM25 를 RRF 로 합쳐 40문항 (리랭커 없이, 30초)"
-	@echo "make hybrid          + 리랭커까지 → results/hybrid.json (오늘 결과물, 1~2분)"
-	@echo "make rerank-sweep    리랭커 후보 10·20 별 품질과 지연, 문항 10개 (실습 3, 약 6분)"
-	@echo "make check-s04       4회차 확인 → results/check_s04.json (이 파일을 제출)"
-	@echo "--- 3회차 명령. 그대로 남겨 둡니다 ---"
-	@echo "make ingest          문서 51건 → data/chunks/chunks.jsonl + data/ingest_report.json (약 6분)"
+	@echo "make notebook        에이전트 노트북 열기 (수업 1~2부)"
+	@echo "make test            자동 채점. 2~4회차 51개 + 5회차 검사 (채우기 전에는 실패가 정상)"
+	@echo "make ask Q=\"질문\"    질문 하나를 에이전트에 넣고 경로·판정·근거·답변을 본다"
+	@echo "make graph           에이전트 상태도를 mermaid 텍스트로 찍는다"
+	@echo "make agentic-sample  골든셋 앞 10문항을 에이전트로 → results/agentic_sample.json (실측 1, 약 3분)"
+	@echo "make agentic         40문항 전부 → results/agentic.json (오늘 결과물, 약 12~15분. 휴식에 돌립니다)"
+	@echo "make adversarial     적대적 5문항 → results/adversarial.json (1분)"
+	@echo "make check-s05       5회차 확인 → results/check_s05.json (이 파일을 제출)"
+	@echo "--- 3·4회차 명령. 그대로 남겨 둡니다 ---"
+	@echo "make hybrid          Hybrid + 리랭커로 40문항 → results/hybrid.json (약 8~10분)"
 	@echo "make index           청크를 임베딩(스냅샷 재사용)해서 Qdrant 에 넣는다 (10초)"
 	@echo "make baseline        골든셋 40문항 Dense 검색 → results/baseline.json (30초)"
 
@@ -41,10 +42,27 @@ embeddings:
 	@ls -la data/embeddings/BAAI_bge-m3.npz
 
 notebook:
-	$(PY) -m jupyter lab notebooks/s04_hybrid.ipynb
+	$(PY) -m jupyter lab notebooks/s05_agent.ipynb
 
 test:
 	$(PY) -m pytest -q
+
+ask:
+	$(PY) scripts/ask.py "$(Q)"
+
+graph:
+	$(PY) scripts/agent_graph.py
+
+agentic-sample:
+	$(PY) pipelines/agentic.py --limit 10 --verbose
+
+agentic:
+	$(PY) pipelines/agentic.py --verbose
+
+adversarial:
+	$(PY) scripts/adversarial_run.py
+
+# ── 4회차 명령. 그대로 남겨 둡니다 ──
 
 bm25-compare:
 	$(PY) scripts/bm25_compare.py
@@ -61,7 +79,7 @@ rerank-sweep:
 check-s%:
 	$(PY) scripts/check_session.py $*
 
-# ── 3회차 명령. 그대로 남겨 둡니다 ──
+# ── 3회차 명령 ──
 ingest-sample:
 	$(PY) pipelines/ingest.py --no-checkpoint $(SAMPLE)
 

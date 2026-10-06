@@ -41,10 +41,13 @@ def aggregate(rows: list[dict], ks: tuple[int, ...] = (1, 3, 5, 10)) -> dict:
             can = [r for r in answered if r.get("answerable", True)]
             if can:
                 out["false_refusal_rate"] = round(sum(1 for r in can if not r["answered"]) / len(can), 4)
-            # 미답변 정확도: 거절해야 할 문항을 실제로 거절했는가
+            # 미답변 정확도: 거절해야 할 문항에서 숫자를 만들지 않았는가.
+            # 거절(abstain)뿐 아니라 "근거 부족" 판정으로 한계를 밝힌 답변도 센다(ADR-004: 상한에
+            # 닿은 insufficient 는 거절이 아니라 한계를 밝힌 답변으로 간다. 그 답은 값을 말하지 않는다).
             cannot = [r for r in answered if not r.get("answerable", True)]
             if cannot:
-                out["abstain_accuracy"] = round(sum(1 for r in cannot if not r["answered"]) / len(cannot), 4)
+                declined = [r for r in cannot if (not r["answered"]) or r.get("grade") == "insufficient"]
+                out["abstain_accuracy"] = round(len(declined) / len(cannot), 4)
         lat = [r["latency_ms"] for r in subset if r.get("latency_ms")]
         if lat:
             out["latency_ms_avg"] = round(sum(lat) / len(lat), 1)

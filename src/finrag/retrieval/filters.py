@@ -7,9 +7,11 @@ LLM 은 이 Pydantic 스키마를 채우기만 한다. Qdrant Filter 로 옮기�
 """
 from __future__ import annotations
 
+import calendar
+import re
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from qdrant_client import models
 
 
@@ -21,6 +23,43 @@ class QueryFilters(BaseModel):
     generation: str | None = Field(None, description="실손보험 세대. 예: 4세대, 5세대")
     effective_on: str | None = Field(None, description="기준일(YYYY-MM-DD) 또는 'latest'")
     exclude_synthetic: bool = Field(True, description="열화 재현본 제외 여부")
+
+    @field_validator("effective_on", mode="before")
+    @classmethod
+    def _normalize_effective_on(cls, v):
+        # LLM 은 "2021-03" 처럼 달까지만 주기도 한다. 그대로 Qdrant 에 넘기면 검색 노드가 죽는다.
+        return normalize_date(v) if isinstance(v, str) else v
+
+
+def normalize_date(value: str | None) -> str | None:
+    """LLM 이 넘긴 기준일을 YYYY-MM-DD 로 맞춘다.
+
+    '2021-03' → '2021-03-31', '2021' → '2021-12-31', '2013년 7월 1일' → '2013-07-01'.
+    'latest' 는 그대로 둔다. 날짜로 못 읽으면 None 이다 — 잘못된 필터는 빈 필터보다 나쁘다.
+    """
+    if value is None:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    if v.lower() == "latest":
+        return "latest"
+    m = re.search(r"(\d{4})(?:\D+(\d{1,2}))?(?:\D+(\d{1,2}))?", v)
+    if not m:
+        return None
+    year, month, day = int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)
+    if not 1900 <= year <= 2100:
+        return None
+    if month == 0:
+        return f"{year}-12-31"
+    if not 1 <= month <= 12:
+        return None
+    last = calendar.monthrange(year, month)[1]
+    if day == 0:
+        return f"{year}-{month:02d}-{last:02d}"
+    if not 1 <= day <= last:
+        return None
+    return f"{year}-{month:02d}-{day:02d}"
 
 
 def to_qdrant(f: QueryFilters) -> models.Filter | None:

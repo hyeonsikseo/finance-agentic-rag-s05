@@ -99,7 +99,13 @@ def get_llm(role: str = "answer", *, size: str = "main", temperature: float = 0.
 
     from langchain.chat_models import init_chat_model
     kwargs: dict[str, Any] = {"temperature": temperature}
-    if spec.startswith("ollama:"):
+    # 키는 .env 에서 읽은 설정값을 그대로 넘긴다. 넘기지 않으면 프로바이더 SDK 가
+    # 환경변수(OPENAI_API_KEY)만 찾아서, .env 에만 키를 둔 사람은 "Missing credentials" 를 본다.
+    if spec.startswith("openai:"):
+        kwargs["api_key"] = s.openai_api_key
+    elif spec.startswith("anthropic:"):
+        kwargs["api_key"] = s.anthropic_api_key
+    elif spec.startswith("ollama:"):
         kwargs["base_url"] = s.ollama_base_url
     return init_chat_model(spec, **kwargs)
 

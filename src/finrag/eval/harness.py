@@ -39,7 +39,14 @@ def run(pipeline: Callable[[str], dict], name: str, *, limit: int | None = None,
     for item in seed:
         qid = item["id"]
         t0 = time.perf_counter()
-        out = pipeline(item["question"])
+        try:
+            out = pipeline(item["question"])
+        except Exception as e:  # noqa: BLE001 — 한 문항이 죽어도 40문항 실행은 끝까지 간다
+            # 수업 중 휴식에 돌리는 11분짜리 실행이 네트워크·한도(429) 한 번에 통째로 날아가면 안 된다.
+            # 그 문항은 "검색 결과 없음 · 답 없음" 으로 적고 error 에 이유를 남긴다.
+            out = {"chunk_ids": [], "answer": None, "abstained": True, "error": f"{type(e).__name__}: {e}"}
+            if verbose:
+                print(f"  {qid} 실패: {out['error'][:80]}")
         latency = (time.perf_counter() - t0) * 1000
         retrieved = out.get("chunk_ids", [])
         gold = gold_ids.get(qid, [])
@@ -51,6 +58,16 @@ def run(pipeline: Callable[[str], dict], name: str, *, limit: int | None = None,
             "answered": (not out["abstained"]) if "abstained" in out else None,
             "answer": out.get("answer"),
         }
+        # 에이전트가 돌린 경우 경로도 남긴다. 어느 문항이 재검색했는지는 여기서 읽는다.
+        # 6회차가 읽는 것도 여기 있다: chunk_ids(judge 가 "무엇을 인용했나"), filters(필터 정확도),
+        # calc(계산 정확도), usage(모델별 토큰 → 비용).
+        for k in ("grade", "retry_count", "trace", "notices", "error", "filters", "usage"):
+            if k in out:
+                row[k] = out[k]
+        row["chunk_ids"] = retrieved[:10]
+        if out.get("calc"):
+            c = out["calc"]
+            row["calc"] = {k: c.get(k) for k in ("tool", "value", "unit", "abstain_reason") if k in c}
         for k in KS:
             row[f"recall@{k}"] = recall_at_k(retrieved, gold, k)
         rows.append(row)
