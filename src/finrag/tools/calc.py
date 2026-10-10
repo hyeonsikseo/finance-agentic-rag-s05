@@ -76,14 +76,41 @@ def savings_early_termination_rate(
     구간표의 첫 행이 산식이 아니라 고정값인 경우가 많다(농협 '3개월 미만 0.1%').
     그때는 fixed_rate_pct 로 받는다. 산식을 억지로 적용하면 틀린다.
     """
-    # ── TODO: 여기를 채우세요 ──────────────────────────────
-    # 요구사항은 tests/test_calc_golden.py 의 test_c01 · test_c02 · test_c03 이 정한다. 산식 셋은 위 독스트링에 있다.
-    # 재료: trunc_rate(x, precision) · CalcResult(value, unit, steps, rules, warnings, abstain_reason) · _missing(("이름", 값), …) · math.floor / math.ceil
-    # 생각할 것 넷. 구간표 첫 행이 고정값(fixed_rate_pct)이면 산식을 돌릴 이유가 있는가.
-    # 적용률(ratio) 대신 차감률(deduction_pct)이 오면 곱하는 수는 무엇인가. 월 미만 처리(month_rule)는 floor 와 ceil 중 무엇인가 — 은행마다 반대다.
-    # 산출값이 최저보장(min_rate_pct)보다 작으면 무엇이 답이고, 그 사실을 어디(warnings · steps)에 남길 것인가.
-    # steps 에는 사람이 검산할 수 있게 계산 과정을 문장으로 남긴다. 답변 노드가 그대로 인용한다.
-    raise NotImplementedError("TODO: savings_early_termination_rate 를 구현하세요")
+    if fixed_rate_pct is not None:
+        return CalcResult(fixed_rate_pct, "%", [f"구간 고정값 {fixed_rate_pct}%"],
+                          {"band": "fixed"})
+    miss = _missing(("base_rate_pct", base_rate_pct))
+    if miss:
+        return CalcResult(None, "%", abstain_reason=f"문서에서 값을 찾지 못했습니다: {', '.join(miss)}")
+
+    if deduction_pct is not None:
+        factor, label = 1 - deduction_pct, f"(1 − 차감률 {deduction_pct:.0%})"
+    elif ratio is not None:
+        factor, label = ratio, f"적용률 {ratio:.0%}"
+    else:
+        return CalcResult(None, "%", abstain_reason="적용률(또는 차감률)을 문서에서 찾지 못했습니다.")
+
+    if days_elapsed is not None and days_contract:
+        frac, frac_label = days_elapsed / days_contract, f"{days_elapsed}일/{days_contract}일"
+    elif months_elapsed is not None and months_contract:
+        m = math.floor(months_elapsed) if month_rule == "floor" else math.ceil(months_elapsed)
+        m = min(m, months_contract)         # 경과월수는 계약월수를 넘을 수 없다
+        frac, frac_label = m / months_contract, f"{m}개월/{months_contract}개월"
+    else:
+        return CalcResult(None, "%", abstain_reason="경과기간·계약기간을 찾지 못했습니다.")
+
+    raw = base_rate_pct * factor * frac
+    rate = trunc_rate(raw, rate_precision)
+    steps = [f"{base_rate_pct}% × {label} × {frac_label} = {raw:.6f}%",
+             f"소수 {rate_precision}자리 절사 → {rate}%"]
+    warnings: list[str] = []
+    if rate < min_rate_pct:
+        steps.append(f"최저보장 {min_rate_pct}% 미만이라 최저보장 적용")
+        warnings.append(f"산출값 {rate}% < 최저보장 {min_rate_pct}%")
+        rate = min_rate_pct
+    return CalcResult(rate, "%", steps,
+                      {"rate_precision": rate_precision, "month_rule": month_rule,
+                       "min_rate_pct": min_rate_pct}, warnings)
 
 
 def savings_maturity_interest(
